@@ -10,6 +10,7 @@ namespace FolderScan.Sections {
             c.L(bar);
             c.L(" folderscan " + ScanContext.Version + " (C# port of " + ScanContext.BaseVersion + ") : structure / content / data structure / linkage / database / semantic dependency report");
             c.L(" Target    : " + c.ScanRoot);
+            c.L(" Settings  : " + c.Settings.Describe());
             c.L(" Scan time : " + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture));
             c.L(bar);
             c.L(" Sections");

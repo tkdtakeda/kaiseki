@@ -31,16 +31,19 @@ namespace FolderScan.App {
 
             try { Console.Title = "folderscan " + ScanContext.Version + " - structure / content / data structure / linkage / database / semantic dependency (read-only target)"; } catch { }
             IConsoleLog log = new ConsoleLog();
-            Settings settings = Settings.Load(ini);
+            UserSettingsStore pc = UserSettingsStore.Load(UserSettingsStore.DefaultPath());
+            Settings settings = SettingsLoader.Load(ini, pc);
             settings.Home = home;
             foreach (string w in settings.Warnings) log.Info("  [warn] " + w);
+            log.Info("Settings : " + settings.Describe());
 
             string outDir = OutputLocator.Resolve();
             log.Info("Output folder: " + outDir);
 
             ScanRunner runner = new ScanRunner(settings, log, SectionRegistry.Default);
             TargetResolver resolver = new TargetResolver(home, outDir);
-            ConsoleShell shell = new ConsoleShell(runner, resolver, new NotepadViewer(), new DialogFolderPicker(), outDir, settings.OpenResult == 1);
+            ISettingsMenu menu = new ConsoleSettingsMenu(new SettingsEditor(settings, pc, ini), ini);
+            ConsoleShell shell = new ConsoleShell(runner, resolver, new NotepadViewer(), new DialogFolderPicker(), menu, settings, outDir);
 
             if (paths.Count > 0) shell.Execute(resolver.ResolveMany(paths));
             shell.Loop();
