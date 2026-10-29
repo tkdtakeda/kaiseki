@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{TITLE}}</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<style>
+{{CSS}}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="brand" title="スキャン対象">
+    <i class="fa-solid fa-sitemap"></i>
+    <span id="t-target"></span>
+    <small id="t-run"></small>
+  </div>
+  <nav class="tabs" id="tabs" aria-label="表示の切り替え">
+    <button data-tab="overview" title="概要 (1)"><i class="fa-solid fa-house"></i><span>概要</span></button>
+    <button data-tab="graph" title="構成図 (2)"><i class="fa-solid fa-diagram-project"></i><span>構成図</span></button>
+    <button data-tab="files" title="ファイル一覧 (3)"><i class="fa-solid fa-list"></i><span>ファイル</span></button>
+    <button data-tab="config" title="設定・データ・外部資源 (4)"><i class="fa-solid fa-sliders"></i><span>設定・データ</span></button>
+    <button data-tab="findings" title="未解決 (5)"><i class="fa-solid fa-circle-exclamation"></i><span>未解決</span><em id="badge-findings" class="count"></em></button>
+    <button data-tab="cleanup" title="整理候補 (6)"><i class="fa-solid fa-broom"></i><span>整理候補</span><em id="badge-cleanup" class="count"></em></button>
+  </nav>
+  <div class="tools">
+    <span id="visible-count" class="visible-count" title="絞り込み後に表示しているファイル数"></span>
+    <button class="icon" id="btn-filter" title="絞り込み (F)"><i class="fa-solid fa-filter"></i><em id="filter-badge" class="dot"></em></button>
+    <button class="icon" id="btn-detail" title="詳細パネル (D)"><i class="fa-solid fa-circle-info"></i></button>
+    <button class="icon" id="btn-help" title="使い方 (?)"><i class="fa-regular fa-circle-question"></i></button>
+  </div>
+</header>
+
+<div class="layout">
+  <aside id="filter" class="panel left closed" aria-label="絞り込み">
+    <div class="panel-head">
+      <span><i class="fa-solid fa-filter"></i> 絞り込み</span>
+      <button class="icon small" id="btn-filter-reset" title="すべて解除"><i class="fa-solid fa-rotate-left"></i></button>
+      <button class="icon small" data-close="filter" title="閉じる (Esc)"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <div class="panel-body" id="filter-body">
+      <label class="search"><i class="fa-solid fa-magnifying-glass"></i><input id="q" type="search" placeholder="ファイル名・パスで検索 ( / )" autocomplete="off"></label>
+      <div id="filter-groups"></div>
+    </div>
+  </aside>
+
+  <main id="main">
+    <section id="view-overview" class="view"></section>
+    <section id="view-graph" class="view graph-view">
+      <div class="graph-bar">
+        <div class="seg" id="graph-mode">
+          <button data-mode="entry" title="起点（起動スクリプト・main）からつながる範囲"><i class="fa-solid fa-play"></i> 起点から</button>
+          <button data-mode="focus" title="選択中のファイルの周辺 2 段"><i class="fa-solid fa-crosshairs"></i> 選択の周辺</button>
+          <button data-mode="all" title="関係のあるすべてのファイル"><i class="fa-solid fa-globe"></i> すべて</button>
+        </div>
+        <span class="graph-info" id="graph-info"></span>
+        <div class="seg">
+          <button id="zoom-out" title="縮小 (-)"><i class="fa-solid fa-magnifying-glass-minus"></i></button>
+          <button id="zoom-fit" title="全体を表示 (0)"><i class="fa-solid fa-expand"></i></button>
+          <button id="zoom-in" title="拡大 (+)"><i class="fa-solid fa-magnifying-glass-plus"></i></button>
+        </div>
+      </div>
+      <div class="graph-wrap" id="graph-wrap"><svg id="graph" xmlns="http://www.w3.org/2000/svg"></svg></div>
+      <div class="legend" id="legend"></div>
+    </section>
+    <section id="view-files" class="view"></section>
+    <section id="view-config" class="view"></section>
+    <section id="view-findings" class="view"></section>
+    <section id="view-cleanup" class="view"></section>
+  </main>
+
+  <aside id="detail" class="panel right closed" aria-label="詳細">
+    <div class="panel-head">
+      <span><i class="fa-solid fa-circle-info"></i> 詳細</span>
+      <button class="icon small" data-close="detail" title="閉じる (Esc)"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <div class="panel-body" id="detail-body"></div>
+  </aside>
+</div>
+
+<div id="help" class="modal hidden" role="dialog" aria-label="使い方">
+  <div class="modal-box">
+    <div class="panel-head"><span><i class="fa-regular fa-circle-question"></i> 使い方</span><button class="icon small" data-close="help" title="閉じる (Esc)"><i class="fa-solid fa-xmark"></i></button></div>
+    <div class="modal-body">
+      <p>他の人が作ったシステムを把握して直すための見取り図です。ファイルをクリックすると、右に詳細（依存先・依存元・変更したときの影響範囲・未解決の点）が開きます。</p>
+      <table class="keys">
+        <tr><td><kbd>1</kbd>〜<kbd>6</kbd></td><td>タブの切り替え</td></tr>
+        <tr><td><kbd>F</kbd></td><td>絞り込みパネルの開閉</td></tr>
+        <tr><td><kbd>D</kbd></td><td>詳細パネルの開閉</td></tr>
+        <tr><td><kbd>/</kbd></td><td>検索欄へ移動</td></tr>
+        <tr><td><kbd>Esc</kbd></td><td>パネル・この画面を閉じる</td></tr>
+        <tr><td><kbd>+</kbd> <kbd>-</kbd> <kbd>0</kbd></td><td>構成図の拡大・縮小・全体表示（ドラッグで移動、ホイールで拡大縮小）</td></tr>
+      </table>
+      <p class="muted">実線 = 確かな関係（ソースに明記・規則で特定）、点線 = 推定。詳細な根拠は同じフォルダの scan.txt、AI に相談するときは latest_diag.json を渡してください。</p>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+<script type="application/json" id="data">{{DATA}}</script>
+<script>
+{{JS}}
+</script>
+</body>
+</html>
