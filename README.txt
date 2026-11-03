@@ -1,14 +1,12 @@
-folderscan v6.1 change set
+folderscan v6.1 change set  (applied)
 
-Replace:
-- Findings.cs            <- Findings_v6.1.cs (rename to Findings.cs)
-- ScanContext.cs         <- ScanContext_v6.1.cs (rename to ScanContext.cs)
+Applied in src/:
+- src/Diag/Findings.cs           v6.1 (duplicate finding IDs merged, SQLite system objects are benign)
+- src/Core/ScanContext.cs        v6.1
+- src/Sections/TokenProvenance.cs           new
+- src/Sections/TokenSymbolSections.cs       EXTFILE edges go through TokenProvenance
 
-Add:
-- TokenProvenance.cs
-
-Then modify TokenSymbolSections.cs at the point immediately before each unresolved EXTFILE edge is added.
-The complete replacement expression is:
+TokenSymbolSections.cs : before each unresolved non-wildcard EXTFILE edge is added,
 
     string provenanceReason;
     bool promote = TokenProvenance.ShouldCreateExternalEdge(x, tok, leaf, ctxS, best, out provenanceReason);
@@ -16,12 +14,17 @@ The complete replacement expression is:
         E.Add("EXTFILE", self, "", tok + " [" + best + "]", r[2], ev0);
     }
 
-For wildcard tokens, keep the current external-pattern behavior because the wildcard itself is explicit file-pattern evidence.
-For non-wildcard tokens, use the block above instead of the current unconditional EXTFILE Add.
-Do not remove the row from file_tokens TSV. This preserves extracted evidence while preventing weak HTML/Jinja bare words from becoming actionable findings.
+Wildcard tokens keep the external-pattern behavior (the wildcard itself is file-pattern evidence).
+The row stays in the file_tokens TSV, so extracted evidence is kept; weak HTML/Jinja bare words
+just do not become actionable findings (Status column shows "suppressed(<reason>)").
 
-Expected checks after rebuild:
+Fix found while applying:
+- Findings.cs : SQL details look like "table sqlite_master", so the kind word is removed
+  before the system-object check. Without it sqlite_master stayed "actionable".
+
+Checks (all verified after the rebuild):
 1. Same finding ID appears only once in latest_diag.json.
 2. sqlite_master/sqlite_schema are class=system-object, action=benign.
-3. templates/index.html bare words such as join, now, rne, rne_ctime, rne_mtime, text remain visible in file_tokens but do not become EXTFILE findings.
+3. templates/index.html bare words such as join, now, rne, rne_ctime, rne_mtime, text do not
+   become EXTFILE findings.
 4. Real asset names with an extension/path and wildcard patterns remain analyzed.

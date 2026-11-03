@@ -1,13 +1,12 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.IO;
 using System.Text;
 
 namespace FolderScan.Core {
     // All tunable values of a scan. Defaults are the values of folderscan v5.18.
-    // Values are read from settings.ini (KEY=value); unknown keys are ignored,
-    // missing keys keep their default.
+    // Values are layered by SettingsLoader : defaults -> settings.ini -> this PC (user_settings.json).
+    // The list of keys and how each one is read / written is in SettingDefs.
     public sealed class Settings {
         // display
         public int OpenResult = 0;   // 1 = open the report in notepad after the scan
@@ -63,87 +62,68 @@ namespace FolderScan.Core {
         public int GapCtx = 3;
         public int History = 1;
 
-        public string SourcePath = "(defaults)";
+        public const string FromIni = "settings.ini";
+        public const string FromPc = "this PC";
+
+        public string SourcePath = "(defaults)";   // settings.ini that was read
+        public string PcPath = "";                 // user_settings.json of this PC
         public string Home = "";     // folder of folderscan.bat (templates\ is read from here)
         public readonly List<string> Warnings = new List<string>();
+        // key -> FromIni / FromPc ; keys not listed keep the built-in default
+        public readonly Dictionary<string, string> Origin = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
         public long LinkMaxBytes { get { return (long)LinkMaxMb * 1048576L; } }
         public long DatMaxBytes { get { return (long)DatMaxMb * 1048576L; } }
 
-        static List<string> Words(string s) {
+        public static List<string> Words(string s) {
             List<string> l = new List<string>();
-            foreach (string w in s.Split(new char[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries)) l.Add(w);
+            foreach (string w in (s ?? "").Split(new char[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries)) l.Add(w);
             return l;
         }
 
-        public static Settings Load(string path) {
-            Settings s = new Settings();
-            if (string.IsNullOrEmpty(path) || !File.Exists(path)) {
-                s.Warnings.Add("settings file not found, defaults are used: " + path);
-                return s;
-            }
-            s.SourcePath = path;
-            Dictionary<string, string> kv = IniFile.Read(path);
-            foreach (KeyValuePair<string, string> p in kv) s.Apply(p.Key, p.Value);
-            for (int i = 0; i < s.GenericKeys.Count; i++) s.GenericKeys[i] = s.GenericKeys[i].ToLowerInvariant();
-            return s;
+        // Current value of a key in settings.ini notation, null = unknown key.
+        public string Get(string key) {
+            SettingDef d = SettingDefs.Find(key);
+            return d == null ? null : d.Get(this);
         }
 
-        void Apply(string key, string value) {
-            switch (key.ToUpperInvariant()) {
-                case "DIAG": Diag = Int(key, value, Diag); break;
-                case "MAP": Map = Int(key, value, Map); break;
-                case "DUMPDAT": DumpDat = Int(key, value, DumpDat); break;
-                case "DUMPTEXT": DumpText = Int(key, value, DumpText); break;
-                case "DUMPFILES": DumpFiles = new List<string>(); foreach (string p in value.Split(';')) if (p.Trim().Length > 0) DumpFiles.Add(p.Trim()); break;
-                case "DIAGTOP": DiagTop = Int(key, value, DiagTop); break;
-                case "OPENRESULT": OpenResult = Int(key, value, OpenResult); break;
-                case "MAXCAB": MaxCab = Int(key, value, MaxCab); break;
-                case "CABEXT": CabExt = Int(key, value, CabExt); break;
-                case "HEADBYTES": HeadBytes = Int(key, value, HeadBytes); break;
-                case "HEXMAX": HexMax = Int(key, value, HexMax); break;
-                case "DATINCAB": DatInCab = Int(key, value, DatInCab); break;
-                case "DATMAXMB": DatMaxMb = Int(key, value, DatMaxMb); break;
-                case "RECSAMPLE": RecSample = Int(key, value, RecSample); break;
-                case "RECLAG": RecLag = Int(key, value, RecLag); break;
-                case "HASHALL": HashAll = Int(key, value, HashAll); break;
-                case "MINSTR": MinStr = Int(key, value, MinStr); break;
-                case "LINKMAXMB": LinkMaxMb = Int(key, value, LinkMaxMb); break;
-                case "KEYMAX": KeyMax = Int(key, value, KeyMax); break;
-                case "KEYMAXFILES": KeyMaxFiles = Int(key, value, KeyMaxFiles); break;
-                case "KEYTOP": KeyTop = Int(key, value, KeyTop); break;
-                case "PROFREC": ProfRec = Int(key, value, ProfRec); break;
-                case "RECMIN": RecMin = Dbl(key, value, RecMin); break;
-                case "SKIPEXT": SkipExt = Words(value); break;
-                case "RECEXT": RecExt = Words(value); break;
-                case "SYMMIN": SymMin = Int(key, value, SymMin); break;
-                case "MERMAIDKEY": MermaidKey = Int(key, value, MermaidKey); break;
-                case "MERMAIDSYM": MermaidSym = Int(key, value, MermaidSym); break;
-                case "MERMAIDWEAK": MermaidWeak = Int(key, value, MermaidWeak); break;
-                case "GENERICKEYS": GenericKeys = Words(value); break;
-                case "WRAPDEPTH": WrapDepth = Int(key, value, WrapDepth); break;
-                case "REVIEWMAX": ReviewMax = Int(key, value, ReviewMax); break;
-                case "SNIPLEN": SnipLen = Int(key, value, SnipLen); break;
-                case "GAPMAX": GapMax = Int(key, value, GapMax); break;
-                case "GAPCTX": GapCtx = Int(key, value, GapCtx); break;
-                case "HISTORY": History = Int(key, value, History); break;
-                default: Warnings.Add("unknown setting ignored: " + key); break;
-            }
+        // Sets a key from settings.ini notation. Returns an error text, or null when the value was taken.
+        // A rejected value leaves the setting unchanged.
+        public string TrySet(string key, string value) {
+            SettingDef d = SettingDefs.Find(key);
+            if (d == null) return "unknown setting: " + key;
+            return d.Set(this, value ?? "");
         }
 
-        int Int(string key, string v, int def) {
-            int r;
-            if (int.TryParse(v.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out r)) return r;
-            Warnings.Add("invalid number for " + key + " (" + v + "), default " + def + " is used");
-            return def;
+        // One layer of the loader. Problems become warnings; the previous value is kept.
+        public void ApplyLayer(string key, string value, string origin) {
+            SettingDef d = SettingDefs.Find(key);
+            if (d == null) { Warnings.Add("unknown setting ignored (" + origin + "): " + key); return; }
+            string before = d.Get(this);
+            string err = d.Set(this, value ?? "");
+            if (err != null) { Warnings.Add("invalid value for " + d.Key + " in " + origin + " (" + value + "): " + err + " ; " + before + " is used"); return; }
+            Origin[d.Key] = origin;
         }
 
-        double Dbl(string key, string v, double def) {
-            double r;
-            if (double.TryParse(v.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out r)) return r;
-            Warnings.Add("invalid number for " + key + " (" + v + "), default " + def + " is used");
-            return def;
+        public List<string> PcKeys() {
+            List<string> l = new List<string>();
+            foreach (SettingDef d in SettingDefs.All) { string o; if (Origin.TryGetValue(d.Key, out o) && o == FromPc) l.Add(d.Key); }
+            return l;
         }
+
+        // One line for the console and the report : where the values came from.
+        public string Describe() {
+            List<string> pc = PcKeys();
+            string s = SourcePath == "(defaults)" ? "built-in defaults" : SourcePath;
+            if (pc.Count == 0) return s;
+            return s + " + " + FromPc + " " + pc.Count + " (" + string.Join(", ", pc.ToArray()) + ")";
+        }
+    }
+
+    // One "KEY=value" line of settings.ini with its section and the comment lines above it.
+    public sealed class IniItem {
+        public string Section = "", Key = "", Value = "";
+        public readonly List<string> Help = new List<string>();
     }
 
     // Minimal ini reader : KEY=value, lines starting with ; or # are comments,
@@ -151,14 +131,29 @@ namespace FolderScan.Core {
     public static class IniFile {
         public static Dictionary<string, string> Read(string path) {
             Dictionary<string, string> d = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (IniItem it in ReadDoc(path)) d[it.Key] = it.Value;
+            return d;
+        }
+
+        // Keys in file order, with the section and the comment lines directly above each key.
+        public static List<IniItem> ReadDoc(string path) {
+            List<IniItem> r = new List<IniItem>();
+            if (string.IsNullOrEmpty(path) || !File.Exists(path)) return r;
+            string section = "";
+            List<string> help = new List<string>();
             foreach (string raw in File.ReadAllLines(path, new UTF8Encoding(false))) {
-                string line = raw.Trim();
-                if (line.Length == 0 || line[0] == ';' || line[0] == '#' || line[0] == '[') continue;
+                string line = raw.Trim().TrimStart('﻿');
+                if (line.Length == 0) { help.Clear(); continue; }
+                if (line[0] == '[') { section = line.Trim('[', ']').Trim(); help.Clear(); continue; }
+                if (line[0] == ';' || line[0] == '#') { help.Add(line.TrimStart(';', '#').Trim()); continue; }
                 int eq = line.IndexOf('=');
                 if (eq <= 0) continue;
-                d[line.Substring(0, eq).Trim()] = line.Substring(eq + 1).Trim();
+                IniItem it = new IniItem();
+                it.Section = section; it.Key = line.Substring(0, eq).Trim(); it.Value = line.Substring(eq + 1).Trim();
+                it.Help.AddRange(help); help.Clear();
+                r.Add(it);
             }
-            return d;
+            return r;
         }
     }
 }
